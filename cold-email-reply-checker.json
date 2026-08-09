@@ -1,0 +1,227 @@
+{
+  "name": "Cold Email Outreach - Reply Checker (FIXED)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "7f6d4f98-b3be-48c3-b35e-1295ea151857",
+      "name": "Every 2 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a089e1e3-4201-42ad-ba18-a3f779e364b1",
+      "name": "Check Inbox (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        976,
+        32
+      ],
+      "credentials": {
+        "imap": {
+          "id": "NQcOjvnmxHg2MCBF",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "options": {}
+      },
+      "id": "8d3c0695-e151-4e21-8c01-9487cc31f790",
+      "name": "Read Leads Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        976,
+        336
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Match inbox senders against the leads sheet by email address.\n// Wrapped in try/catch so a node that didn't execute in this run\n// (e.g. tested in isolation, or IMAP timed out) returns an empty\n// list instead of crashing the whole workflow.\nlet emailItems = [];\ntry {\n  emailItems = $('Check Inbox (IMAP)').all();\n} catch (e) {\n  emailItems = [];\n}\n\nlet leadItems = [];\ntry {\n  leadItems = $('Read Leads Sheet').all();\n} catch (e) {\n  leadItems = [];\n}\n\nif (emailItems.length === 0 || leadItems.length === 0) {\n  return [];\n}\n\n// Only look at messages received since the last check (defensive filter\n// in case markSeen/read state gets reset or IMAP re-delivers).\nconst twoHoursAgo = new Date(Date.now() - 2.5 * 60 * 60 * 1000);\n\nconst leadEmails = new Map();\nfor (const lead of leadItems) {\n  const email = (lead.json.Email || '').toLowerCase().trim();\n  if (email) leadEmails.set(email, lead.json);\n}\n\nconst matchedEmails = new Set();\nconst matched = [];\n\nfor (const msg of emailItems) {\n  const fromHeader = (msg.json.from || msg.json.From || '').toLowerCase();\n\n  // Skip clearly stale messages if a date field is present\n  const msgDate = msg.json.date ? new Date(msg.json.date) : null;\n  if (msgDate && msgDate < twoHoursAgo) continue;\n\n  for (const [email] of leadEmails.entries()) {\n    if (fromHeader.includes(email) && !matchedEmails.has(email)) {\n      matchedEmails.add(email);\n      matched.push({\n        json: {\n          Email: email,\n          Status: 'Replied',\n          LastContactDate: new Date().toISOString().split('T')[0]\n        }\n      });\n    }\n  }\n}\n\nreturn matched;"
+      },
+      "id": "765b332a-de65-402b-bfe7-c8361f83ac85",
+      "name": "Match Replies To Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Email"
+          ],
+          "value": {
+            "Email": "={{ $json.Email }}",
+            "Status": "={{ $json.Status }}",
+            "LastContactDate": "={{ $json.LastContactDate }}"
+          },
+          "schema": [
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "LastContactDate",
+              "displayName": "LastContactDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "735e4ef7-0b71-448d-a903-207a9090dfe9",
+      "name": "Mark As Replied",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1472,
+        192
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 2 Hours": {
+      "main": [
+        [
+          {
+            "node": "Read Leads Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Inbox (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Match Replies To Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads Sheet": {
+      "main": [
+        [
+          {
+            "node": "Match Replies To Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Replies To Leads": {
+      "main": [
+        [
+          {
+            "node": "Mark As Replied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "49e5c0c5-be0b-46b5-ade3-acdd924f2a9c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "669f4d03b9c661d26ee4f9a0522452a1565bea484ddfc51d3ae775c5257b3aa5"
+  },
+  "nodeGroups": [],
+  "id": "2HDHNpiFRIB7QlDV",
+  "tags": []
+}
