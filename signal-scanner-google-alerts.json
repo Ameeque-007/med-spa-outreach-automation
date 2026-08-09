@@ -1,0 +1,310 @@
+{
+  "name": "Signal Scanner - Google Alerts (Med Spa)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "f20c5cbc-ec72-4d88-a0a7-a1ab1532e47f",
+      "name": "Daily Trigger (7AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -752,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// EDIT ME: paste your Google Alerts RSS feed URLs here.\n// One object per alert. 'city' and 'signal_type' get tagged\n// onto every article found in that feed, so you can filter/\n// score later. Add or remove rows as you set up more alerts.\n// ============================================\nconst feeds = [\n {\n    url:          'YOUR_GOOGLE_ALERTS_FEED_URL_HERE',\n    city: 'Austin, TX',\n    signal_type: 'new_opening',\n    source_query: '\"new med spa\" Austin'\n},\n  {\n    url: 'YOUR_GOOGLE_ALERTS_FEED_URL_HERE',\n    city: 'Austin, TX',\n    signal_type: 'hiring_post',\n    source_query: '\"med spa\" \"front desk\" hiring Austin'\n  },\n  {\n    url: 'YOUR_GOOGLE_ALERTS_FEED_URL_HERE',\n    city: 'Nashville, TN',\n    signal_type: 'new_opening',\n    source_query: '\"new med spa\" Nashville'\n  },\n  {\n    url: 'YOUR_GOOGLE_ALERTS_FEED_URL_HERE',\n    city: 'Nashville, TN',\n    signal_type: 'hiring_post',\n    source_query: '\"medical spa\" \"now hiring\" receptionist Nashville'\n  },\n  {\n    url: 'YOUR_GOOGLE_ALERTS_FEED_URL_HERE',\n    city: 'Charlotte, NC',\n    signal_type: 'new_opening',\n    source_query: '\"med spa\" \"now open\" Charlotte'\n  }\n];\n\nreturn feeds.map(f => ({ json: f }));"
+      },
+      "id": "9047dcc5-c864-47c2-8750-4de665467559",
+      "name": "RSS Feed List (EDIT ME)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "b6f97b1e-4e50-4fe9-b84a-cd9172bd4579",
+      "name": "Loop Over Feeds",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -256,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "1a9c3b37-4176-4985-a24f-b7f3e8f62e28",
+      "name": "Fetch RSS Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.data || '';\nconst meta = $('RSS Feed List (EDIT ME)').item.json;\n\nfunction extractTag(block, tag) {\n  const match = block.match(new RegExp(`<${tag}[^>]*>([\\\\s\\\\S]*?)</${tag}>`));\n  if (!match) return '';\n  return match[1].replace('<![CDATA[', '').replace(']]>', '').trim();\n}\n\nfunction extractLinkHref(block) {\n  const match = block.match(/<link[^>]*href=\"([^\"]+)\"/);\n  if (match) return match[1];\n  const fallback = block.match(/<link[^>]*>([^<]+)<\\/link>/);\n  return fallback ? fallback[1].trim() : '';\n}\n\nfunction unwrapLink(link) {\n  try {\n    const u = new URL(link);\n    const real = u.searchParams.get('url');\n    return real || link;\n  } catch (e) {\n    return link;\n  }\n}\n\nlet blocks = [];\nif (raw.includes('<entry>')) {\n  blocks = raw.split('<entry>').slice(1).map(b => b.split('</entry>')[0]);\n} else if (raw.includes('<item>')) {\n  blocks = raw.split('<item>').slice(1).map(b => b.split('</item>')[0]);\n}\n\nconst results = [];\nfor (const block of blocks) {\n  const title = extractTag(block, 'title');\n  const rawLink = extractLinkHref(block);\n  const pubDate = extractTag(block, 'published') || extractTag(block, 'pubDate') || extractTag(block, 'updated');\n  if (!title || !rawLink) continue;\n\n  results.push({\n    json: {\n      signal_id: `${meta.signal_type}_${meta.city}_${Date.now()}_${results.length}`.replace(/[^a-zA-Z0-9_]/g, ''),\n      business_name: title,\n      metro: meta.city,\n      signal_type: meta.signal_type,\n      date_detected: pubDate || new Date().toISOString(),\n      evidence_url: unwrapLink(rawLink),\n      source_query: meta.source_query\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "126ba004-0d1e-40b1-8454-3c1f21f33ddb",
+      "name": "Parse RSS Articles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Signals",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "business_name": "={{ $json.business_name }}",
+            "metro": "={{ $json.metro }}",
+            "signal_type": "={{ $json.signal_type }}",
+            "date_detected": "={{ $json.date_detected }}",
+            "evidence_url": "={{ $json.evidence_url }}",
+            "source_query": "={{ $json.source_query }}",
+            "signal_id": "={{ $json.signal_id }}"
+          },
+          "matchingColumns": [
+            "evidence_url"
+          ],
+          "schema": [
+            {
+              "id": "signal_id",
+              "displayName": "signal_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "business_name",
+              "displayName": "business_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "metro",
+              "displayName": "metro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "signal_type",
+              "displayName": "signal_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_detected",
+              "displayName": "date_detected",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evidence_url",
+              "displayName": "evidence_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_query",
+              "displayName": "source_query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "d119067f-a34c-43cf-b34b-0e1aa7b1ae60",
+      "name": "Upsert Into Signals Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 5) + 3 }}"
+      },
+      "id": "2f0aecf2-924f-4451-94a0-7b020d6664ef",
+      "name": "Wait Between Feeds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ],
+      "webhookId": "5e0456a2-9506-4bef-b613-1141968119af"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Trigger (7AM)": {
+      "main": [
+        [
+          {
+            "node": "RSS Feed List (EDIT ME)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Feed List (EDIT ME)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Feeds": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Fetch RSS Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch RSS Feed": {
+      "main": [
+        [
+          {
+            "node": "Parse RSS Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse RSS Articles": {
+      "main": [
+        [
+          {
+            "node": "Upsert Into Signals Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Into Signals Sheet": {
+      "main": [
+        [
+          {
+            "node": "Wait Between Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Between Feeds": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e1774050-8eb6-40d4-9d63-e080a2ea57c3",
+  "meta": {
+    "instanceId": "669f4d03b9c661d26ee4f9a0522452a1565bea484ddfc51d3ae775c5257b3aa5"
+  },
+  "nodeGroups": [],
+  "id": "B0bxoNyzQG78ta2s",
+  "tags": []
+}
