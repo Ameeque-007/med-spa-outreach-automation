@@ -1,0 +1,547 @@
+{
+  "name": "Instant Lead Finder - Directory Search",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "635ee05b-3eb5-4658-b020-12775ecba598",
+      "name": "Manual Trigger (Run On Demand)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2480,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cities = [\n  \n  'Tampa, FL'\n];\n\nconst queryTemplates = [\n  'med spas in {city}',\n  'best medical spa {city}',\n  'aesthetic clinic {city}',\n  'botox clinic {city}',\n  'laser hair removal spa {city}',\n  'skin care clinic {city}'\n];\n\nconst searches = [];\nfor (const city of cities) {\n  for (const template of queryTemplates) {\n    searches.push({\n      query: template.replace('{city}', city),\n      city: city\n    });\n  }\n}\n\nreturn searches.map(s => ({ json: s }));"
+      },
+      "id": "0af0dd4e-264c-414b-bd42-d97124545705",
+      "name": "Search Queries (EDIT ME)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Raw leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "options": {}
+      },
+      "id": "f9da2f08-c16c-4bc8-9da9-662de84227ef",
+      "name": "Read Existing Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -2320,
+        496
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "74128d2e-3e86-4540-a9a3-94ac250c1be5",
+      "name": "Loop Over Cities",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2016,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst row = $('Loop Over Cities').item.json;\nconst results = item.json.organic || [];\n\nconst blockedHosts = ['facebook.com', 'instagram.com', 'yelp.com', 'yellowpages.com', 'mapquest.com', 'linkedin.com', 'twitter.com', 'x.com', 'tiktok.com', 'youtube.com', 'google.com', 'bing.com', 'realself.com', 'groupon.com'];\n\nconst seenHosts = new Set();\nconst candidates = [];\n\nfor (const r of results) {\n  const link = r.link;\n  if (!link) continue;\n\n  const hostMatch = link.match(/^https?:\\/\\/([^\\/]+)/i);\n  if (!hostMatch) continue;\n  const host = hostMatch[1].replace(/^www\\./, '');\n\n  if (blockedHosts.some(b => host.includes(b))) continue;\n  if (seenHosts.has(host)) continue;\n  seenHosts.add(host);\n\n  candidates.push({\n    json: {\n      website: link,\n      host,\n      title: r.title || '',\n      city: row.city,\n      source_query: row.query\n    }\n  });\n}\n\nreturn candidates.slice(0, 8);"
+      },
+      "id": "e8a292dc-7916-4b69-8a78-79de03efbb79",
+      "name": "Parse Directory Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        320
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Skip this candidate if we already have it in the Leads sheet,\n// or if we've already processed this host earlier in this same run.\nconst row = $json;\n\nlet existing = [];\ntry {\n  existing = $('Read Existing Leads').all();\n} catch (e) {\n  existing = [];\n}\n\nconst inSheet = existing.some(e => {\n  const existingWebsite = (e.json.Website || '').toLowerCase().replace(/\\/$/, '');\n  const rowWebsite = (row.website || '').toLowerCase().replace(/\\/$/, '');\n  return existingWebsite.includes(row.host) || rowWebsite.includes(existingWebsite.replace('https://', '').replace('http://', ''));\n});\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seenHosts = staticData.seenHosts || [];\n\nconst inThisRun = staticData.seenHosts.includes(row.host);\nconst alreadyHave = inSheet || inThisRun;\n\nif (!alreadyHave) staticData.seenHosts.push(row.host);\n\nreturn [{ json: { ...row, already_have: alreadyHave } }];\n\n\nconst alreadyHave = inSheet || inThisRun;\nconst reason = inSheet ? 'in_sheet' : (inThisRun ? 'seen_this_run' : 'new');\n\nreturn [{ json: { ...row, already_have: alreadyHave, dup_reason: reason } }];"
+      },
+      "id": "b1815944-9bc6-48d7-b59a-483dffb342c7",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2576,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.already_have }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "cond-not-dup"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "a1e2e48b-b20a-4a15-9f7a-6e1b03cda03a",
+      "name": "IF New (Not Duplicate)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2352,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "7e9da47e-49a1-4f93-acaa-1e36cc882244",
+      "name": "Fetch Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2128,
+        -16
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const row = $('Check Duplicate').item.json;\nconst html = $json.data || '';\n\n// Look for mailto: links first (most reliable), then fall back to a\n// general email regex scan of the page text.\nconst mailtoMatches = [...html.matchAll(/mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/g)].map(m => m[1]);\nconst generalMatches = [...html.matchAll(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g)].map(m => m[0]);\n\nconst junkPatterns = [\n  'example.com', 'domain.com', 'yourdomain.com', 'yoursite.com',\n  'sentry', 'wixpress.com', 'godaddy.com', 'schema.org',\n  'test@', 'user@', 'name@', 'email@', 'yourname@', 'someone@',\n  '.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp',\n  'w3.org', 'wordpress.org', 'gravatar.com'\n];\n\nconst candidates = [...mailtoMatches, ...generalMatches]\n  .map(e => e.toLowerCase())\n  .filter(e => !junkPatterns.some(junk => e.includes(junk)));\n\n// Reject anything that isn't a plausible real address structure\nconst validCandidates = candidates.filter(e => {\n  const [local, domain] = e.split('@');\n  if (!local || !domain) return false;\n  if (local.length < 2 || domain.length < 4) return false;\n  return true;\n});\n\nconst preferredPrefixes = ['info@', 'contact@', 'hello@', 'bookings@', 'appointments@'];\nlet chosen = validCandidates.find(e => preferredPrefixes.some(p => e.startsWith(p)));\nif (!chosen) chosen = validCandidates[0] || '';\n\n// Try to build a readable company name from the domain if we have nothing better\nconst niceName = row.host ? row.host.replace(/\\.(com|net|co|spa|clinic)$/, '').replace(/[-_]/g, ' ') : (row.title || 'Unknown');\n\n// Try to get a real person's name from the email itself first.\n// Generic/department/location inboxes don't count as a \"name\".\nconst genericPrefixes = ['info', 'contact', 'hello', 'admin', 'support', 'bookings', 'appointments', 'office', 'team', 'sales', 'reception', 'frontdesk', 'inquiries', 'help', 'service'];\n\nlet personName = '';\n\nif (chosen) {\n  const localPart = chosen.split('@')[0];\n  const isGeneric = genericPrefixes.some(p => localPart.toLowerCase().startsWith(p));\n\n  if (!isGeneric) {\n    // Only trust clear \"firstname.lastname\" style patterns (2+ parts).\n    // A single word (e.g. \"nashville@\", \"denver@\", \"training@\") is almost\n    // always a location/department inbox, not a person - leave it blank.\n    const parts = localPart.split(/[._-]/).filter(p => p.length > 1);\n    if (parts.length >= 2) {\n      personName = parts.slice(0, 2).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');\n    }\n  }\n}\n\n// Fallback: look for a capitalized \"Firstname Lastname\" pattern\n// appearing close to the email address on the page (e.g. a signature).\nif (!personName && chosen) {\n  const emailIndex = html.indexOf(chosen);\n  if (emailIndex > -1) {\n    const nearbyText = html.slice(Math.max(0, emailIndex - 150), emailIndex);\n    const nameMatch = nearbyText.match(/([A-Z][a-z]+)\\s([A-Z][a-z]+)(?!.*<)/);\n    if (nameMatch) personName = `${nameMatch[1]} ${nameMatch[2]}`;\n  }\n}\n\nif (!personName) personName = niceName;  // <-- add this line\n\nreturn {\n  json: {\n    ...row,\n    email: chosen,\n    has_email: Boolean(chosen),\n    person_name: personName,\n    company_guess: niceName\n  }\n};"
+      },
+      "id": "cb5e320b-af9c-4476-b268-a805e4d4557d",
+      "name": "Extract Email From Site",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.has_email }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "cond-has-email"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "949e6f6a-44bb-420b-8244-e2fd1320117f",
+      "name": "IF Has Email",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1680,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Raw leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $json.email }}",
+            "Company": "={{ $json.title || $json.company_guess }}",
+            "Industry": "Med Spa",
+            "Website": "={{ $json.title ? $json.title.split(/\\s*[\\|\\-\u00e2]\\s*/)[0].trim() : $json.company_guess }}",
+            "Name": "={{ $json.person_name }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Industry",
+              "displayName": "Industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "271ca96e-2f20-4159-a86e-3ec0ae7015b1",
+      "name": "Append New Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1408,
+        -96
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 3) + 2 }}"
+      },
+      "id": "d0de7a0a-d759-4bfe-85cb-2dcc88d9f8ef",
+      "name": "Wait Between Cities",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1184,
+        112
+      ],
+      "webhookId": "55eea6f6-bac7-42a0-9db3-be7a6ed63d94"
+    },
+    {
+      "parameters": {
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "engine",
+              "value": "google"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.city }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1760,
+        320
+      ],
+      "id": "c20308d0-d909-4f15-af19-de67d04ec4d6",
+      "name": "Serper Google Search API",
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "q3qbV0ZXT4IoADrW",
+          "name": "Header Auth account 4"
+        }
+      },
+      "notes": "Add your Serper API key as an httpHeaderAuth credential (header name: X-API-KEY, value: your serper.dev API key)."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger (Run On Demand)": {
+      "main": [
+        [
+          {
+            "node": "Search Queries (EDIT ME)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Existing Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Queries (EDIT ME)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Cities": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Serper Google Search API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Directory Results": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Between Cities": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "IF New (Not Duplicate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF New (Not Duplicate)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Between Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website": {
+      "main": [
+        [
+          {
+            "node": "Extract Email From Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email From Site": {
+      "main": [
+        [
+          {
+            "node": "IF Has Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Email": {
+      "main": [
+        [
+          {
+            "node": "Append New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Between Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append New Lead": {
+      "main": [
+        [
+          {
+            "node": "Wait Between Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Google Search API": {
+      "main": [
+        [
+          {
+            "node": "Parse Directory Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d4100c6d-7cf0-45ed-8652-27c471119da5",
+  "meta": {
+    "instanceId": "669f4d03b9c661d26ee4f9a0522452a1565bea484ddfc51d3ae775c5257b3aa5"
+  },
+  "nodeGroups": [],
+  "id": "0OW7t4brBCsBBntU",
+  "tags": []
+}
