@@ -1,0 +1,743 @@
+{
+  "name": "Cold Email Outreach - Sender (AI Personalized)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "fb01f08c-2130-48c0-8d51-17c34f32144e",
+      "name": "Daily Trigger (9AM, Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -64,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "options": {}
+      },
+      "id": "9b13e39e-4466-4818-91fb-65fe1726d97e",
+      "name": "Read Leads Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        128,
+        1200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst results = [];\n\n// STEP 1: Remove duplicate emails - keep only the first occurrence of each email\n// (in case same lead got added twice in the sheet by mistake)\nconst seenEmails = new Set();\nconst uniqueRows = [];\n\nfor (const item of $input.all()) {\n  const email = (item.json.Email || '').toLowerCase().trim();\n  if (!email) continue; // skip rows with no email at all\n  if (seenEmails.has(email)) {\n    continue; // skip duplicate, already processed this email once\n  }\n  seenEmails.add(email);\n  uniqueRows.push(item);\n}\n\n// STEP 2: existing logic runs only on the de-duplicated list\nfor (const item of uniqueRows) {\n  const row = item.json;\n  const status = (row.Status || 'New').trim();\n  const lastContact = row.LastContactDate ? new Date(row.LastContactDate) : null;\n  const daysSince = lastContact ? Math.floor((today - lastContact) / (1000 * 60 * 60 * 24)) : null;\n\n  let action = null;\n\n  if (status === 'New' || status === '') {\n    action = 'send_email_1';\n  } else if (status === 'Email1Sent' && daysSince !== null && daysSince >= 4) {\n    action = 'send_followup_1';\n  } else if (status === 'Followup1Sent' && daysSince !== null && daysSince >= 5) {\n    action = 'send_followup_2';\n  } else if (status === 'Followup2Sent' && daysSince !== null && daysSince >= 7) {\n    action = 'send_followup_3_breakup';\n  }\n\n  if (action) {\n    results.push({\n      json: {\n        ...row,\n        action\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "9e422924-8e33-47e9-adda-d8aa9d8622ec",
+      "name": "Decide Action Per Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_email_1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "e533da0b-c61d-47c5-94f0-6ef688456db6"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_followup_1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6d932d8f-6de1-4111-8c02-2a91bdc96cf9"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_followup_2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c2e7fe3d-3f69-4b59-86c4-40b2b64a9a64"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_followup_3_breakup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7e284d59-eae7-4f61-bf39-690ef29fa6b3"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "27aa6e30-6e07-4a89-84f5-8b16e7c28ca0",
+      "name": "Route By Stage",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        752,
+        1184
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.Website }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "d4392dd4-62de-46d5-bc15-dcfcc0af742d",
+      "name": "Fetch Company Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        928,
+        928
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Strip HTML tags down to plain text and truncate so we don't blow up the AI prompt.\n// If the website fetch failed, fall back to just Company + Industry for the AI to work with.\nconst leadRow = $('Route By Stage').item.json;\nlet rawHtml = '';\ntry {\n  rawHtml = $input.first().json.data || $input.first().json.body || '';\n  if (typeof rawHtml !== 'string') rawHtml = JSON.stringify(rawHtml);\n} catch (e) {\n  rawHtml = '';\n}\nlet text = rawHtml\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n// Keep prompt small and cheap\ntext = text.slice(0, 3000);\n\n// --- Booking slot logic: compute suggested days + a random EST time (9am-3pm) based on NY send day ---\nconst nyNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));\nconst dayIndex = nyNow.getDay(); // 0=Sun...6=Sat\n\nconst dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\nconst suggestionMap = {\n  0: ['Monday', 'Tuesday'],    // Sunday send -> fallback\n  1: ['Tuesday', 'Wednesday'], // Monday send\n  2: ['Wednesday', 'Thursday'],// Tuesday send\n  3: ['Thursday', 'Friday'],   // Wednesday send\n  4: ['Friday', 'Monday'],     // Thursday send\n  5: ['Monday', 'Tuesday'],    // Friday send\n  6: ['Monday', 'Tuesday']     // Saturday send -> fallback\n};\nconst suggestedDays = suggestionMap[dayIndex];\n\n// Random time between 9:00am and 3:00pm EST, in 30-min increments\nconst slots = [];\nfor (let h = 9; h <= 14; h++) {\n  slots.push({ h, m: 0 });\n  if (h !== 14) slots.push({ h, m: 30 }); // stop adding past 3:00pm\n}\nconst pick = slots[Math.floor(Math.random() * slots.length)];\nconst hour12 = pick.h > 12 ? pick.h - 12 : pick.h;\nconst ampm = pick.h >= 12 ? 'pm' : 'am';\nconst minuteStr = pick.m === 0 ? '00' : String(pick.m);\nconst suggestedTime = `${hour12}:${minuteStr}${ampm} EST`;\n\nconst bookingSuggestion = `${suggestedDays[0]} or ${suggestedDays[1]} around ${suggestedTime}`;\n\nconst requestBodyObj = {\n  model: 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  temperature: 0.7,\n  max_tokens: 450,\n  messages: [\n    {\n      role: 'system',\n      content: \"You are one of the world's top B2B cold email copywriters \u00e2 the kind agencies hire specifically because your emails get replies, never sound templated, and never come across as pushy or amateur. You are writing on behalf of The Deft Crew, a growth-focused, full-service marketing agency that also builds mobile/web apps and automation (n8n) solutions.\\n\\nYour job has two parts:\\n\\nPART 1 - DIAGNOSE THE REAL PROBLEM (not a generic one):\\nGiven the lead's company, industry, and website text, identify ONE realistic, SPECIFIC operational pain point this type of business actually deals with day-to-day \u00e2 something they'd read and think 'yes, that's exactly our problem,' not a vague line like 'reaching your audience.' Think in terms of repetitive, resource-draining operational work specific to their industry \u00e2 examples of the KIND of specificity to aim for (do not reuse these verbatim, adapt to the lead's real industry): a marketing agency drowning in monthly content calendars, caption writing, strategy research, resource planning, client coordination, lead follow-up, onboarding, and feedback loops; a clinic buried in appointment reminders and no-show follow-ups; an e-commerce store manually reconciling inventory across channels and answering the same 10 customer questions all day; a real estate team re-entering the same lead data across 4 tools and forgetting to follow up. Translate this thinking to whatever industry the lead is actually in, based on their website content.\\n\\nPART 2 - WRITE THE EMAIL BODY (no greeting, that's added separately):\\nWrite a cold email body, 70-110 words, in 2-4 short paragraphs separated by \\\\n\\\\n, that:\\n1. Opens by naming the SPECIFIC pain point above in a way that shows you understand their business (reference something real from their website if possible)\\n2. Makes a 'door-opener' offer that removes all risk: we will build a working solution/tool for this specific problem in 7 days, they can try it free for 7 days, and only if it's genuinely valuable do they hire us for the full project or a retainer \u00e2 otherwise it costs them nothing\\n3. Ends with a single low-pressure question offering a call, using the exact suggested days and time provided in the user message (formatted like: 'Suggested availability: <days> around <time>'). Do not say '15-minute call' or mention any time range \u00e2 just naturally weave in the specific day(s) and time given, phrased as a casual question (e.g., 'Are you free Tuesday or Wednesday around 11:00am EST? Our director has that slot open for a quick call.')\\nTone: confident, direct, human \u00e2 no exclamation marks, no hype words ('amplify', 'unlock', 'revolutionize', 'game-changer'), no corporate filler.\\n\\nRespond ONLY as JSON: {\\\"service\\\": \\\"marketing|app_dev|automation\\\", \\\"pain_point\\\": \\\"...\\\", \\\"subject\\\": \\\"...\\\", \\\"email_body\\\": \\\"...\\\"}. Keep pain_point to 4-8 words, specific and concrete (e.g. 'manual lead follow-up and onboarding', 'juggling content calendars across clients'), not generic.\"\n    },\n    {\n      role: 'user',\n      content: `Company: ${leadRow.Company}\\nIndustry: ${leadRow.Industry}\\nWebsite text: ${text}\\nSuggested availability: ${bookingSuggestion}`\n    }\n  ]\n};\nreturn [{\n  json: {\n    ...leadRow,\n    requestBody: JSON.stringify(requestBodyObj)\n  }\n}];"
+      },
+      "id": "f7d64317-38a6-4203-b557-ad6ef85a2308",
+      "name": "Extract Website Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.requestBody }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "dd3c39bb-f7ee-4f92-93cf-5f9497e079c9",
+      "name": "Call OpenAI - Generate Pitch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1376,
+        928
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "9rBaAcwpbpSLzlyK",
+          "name": "Header Auth account 6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const leadRow = $('Extract Website Text').item.json;\n\nlet parsed = { service: '', pain_point: '', subject: '', email_body: '' };\ntry {\n  const content = $input.first().json.choices[0].message.content;\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = {\n    service: 'automation',\n    pain_point: 'manual, repetitive workflows',\n    subject: `quick question about ${leadRow.Company}`,\n    email_body: `Noticed ${leadRow.Company} is active in the ${leadRow.Industry} space. We recently helped a similar company automate manual workflows and save significant time.\\n\\nWorth a quick chat to see if something similar could help?`\n  };\n}\n\n// Convert AI's \\n\\n paragraph breaks into HTML <br><br> so they render correctly\n// when the email is sent in HTML format instead of plain text.\nconst emailBodyHtml = (parsed.email_body || '')\n  .split('\\n\\n')\n  .map(paragraph => paragraph.trim())\n  .filter(paragraph => paragraph.length > 0)\n  .join('<br><br>');\n\nconst { websiteText, requestBody, ...cleanRow } = leadRow;\n\nreturn [{\n  json: {\n    ...cleanRow,\n    Service: parsed.service,\n    PainPoint: parsed.pain_point,\n    EmailSubject: parsed.subject,\n    EmailBody: emailBodyHtml\n  }\n}];"
+      },
+      "id": "9e1f44c1-a3f0-4e6f-bdf1-38ae2dca8b74",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "YOUR_EMAIL_HERE",
+        "toEmail": "={{ $json.Email }}",
+        "subject": "={{ $json.EmailSubject }}",
+        "html": "={{ $json.Name ? 'Hi ' + $json.Name + ',' : 'Hi ' + $json.Company + ',' }}<br><br>\n\n{{ $json.EmailBody }}<br><br>\n\nBest regards,<br>\nYOUR_NAME_HERE<br>\nYOUR_TITLE_HERE<br>\nThe Deft Crew | Integrated Growth Partner<br>\nThedeftcrew | <a href=\"YOUR_BOOKING_LINK_HERE\">Book a call</a><br>\n<b>We market it. We build it. We automate it. You grow.</b><br>\nConsolidating premium creative, custom tech, and AI automation under one roof.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f4b544e1-b673-4350-81a3-4f93989ddc97",
+      "name": "Send Email 1",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1808,
+        928
+      ],
+      "webhookId": "978faf99-22a8-472e-9fbf-2ffaf84d75c9",
+      "credentials": {
+        "smtp": {
+          "id": "mLYNy3GvhAMGHDpd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "YOUR_EMAIL_HERE",
+        "toEmail": "={{ $json.Email }}",
+        "subject": "=Re: quick question about {{ $json.Company }}",
+        "html": "={{ $json.Name ? 'Hi ' + $json.Name + ',' : 'Hi ' + $json.Company + ',' }}<br><br>\n\nJust following up on my earlier note, didn't want it to get lost in the inbox.<br><br>\n\nStill think there could be a quick win for {{ $json.Company }} around {{ $json.PainPoint }}, based on what we do in {{ $json.Service }}.<br><br>\n\nWorth a quick call sometime early this week or later this week?<br><br>\n\nBest regards,<br>\nYOUR_NAME_HERE<br>\nYOUR_TITLE_HERE<br>\nThe Deft Crew | Integrated Growth Partner<br>\nthedeftcrew.com | <a href=\"YOUR_BOOKING_LINK_HERE\">Book a call</a><br>\n<b>We market it. We build it. We automate it. You grow.</b><br>\nConsolidating premium creative, custom tech, and AI automation under one roof.",
+        "options": {}
+      },
+      "id": "9721bbe8-2cfe-4d90-a5f1-ca9d3a4decd1",
+      "name": "Send Follow-up 1",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        928,
+        1200
+      ],
+      "webhookId": "1dae7388-fd2d-453b-8c79-63e89027b186",
+      "credentials": {
+        "smtp": {
+          "id": "mLYNy3GvhAMGHDpd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "YOUR_EMAIL_HERE",
+        "toEmail": "={{ $json.Email }}",
+        "subject": "=Re: quick question about {{ $json.Company }}",
+        "html": "={{ $json.Name ? 'Hi ' + $json.Name + ',' : 'Hi ' + $json.Company + ',' }}<br><br>\n\nThought this might be useful regardless of timing. Happy to share a couple of examples of similar work we've done, if that would help.<br><br>\n\nIf now isn't the right time, no worries at all happy to reconnect down the line.<br><br>\n\nBest regards,<br>\nYOUR_NAME_HERE<br>\nYOUR_TITLE_HERE<br>\nThe Deft Crew | Integrated Growth Partner<br>\nthedeftcrew.com | <a href=\"YOUR_BOOKING_LINK_HERE\">Book a call</a><br>\n<b>We market it. We build it. We automate it. You grow.</b><br>\nConsolidating premium creative, custom tech, and AI automation under one roof.",
+        "options": {}
+      },
+      "id": "81e4bc9c-cac3-4e52-bb32-5a26d64d2b36",
+      "name": "Send Follow-up 2 (value add)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        928,
+        1360
+      ],
+      "webhookId": "64be3c07-df6e-46d7-a3e3-501e7be56a6f",
+      "credentials": {
+        "smtp": {
+          "id": "mLYNy3GvhAMGHDpd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "YOUR_EMAIL_HERE",
+        "toEmail": "={{ $json.Email }}",
+        "subject": "=Re: quick question about {{ $json.Company }}",
+        "html": "={{ $json.Name ? 'Hi ' + $json.Name + ',' : 'Hi ' + $json.Company + ',' }}<br><br>\n\nHaven't heard back, so I'll assume timing isn't right for now and close this out.<br><br>\n\nIf that changes, feel free to reach out anytime \u00e2 happy to help whenever it makes sense.<br><br>\n\nBest regards,<br>\nYOUR_NAME_HERE<br>\nYOUR_TITLE_HERE<br>\nThe Deft Crew | Integrated Growth Partner<br>\nthedeftcrew.com | <a href=\"YOUR_BOOKING_LINK_HERE\">Book a call</a><br>\n<b>We market it. We build it. We automate it. You grow.</b><br>\nConsolidating premium creative, custom tech, and AI automation under one roof.",
+        "options": {}
+      },
+      "id": "0c50f142-44e2-4b88-9e57-3050cdc31593",
+      "name": "Send Follow-up 3 (breakup)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        928,
+        1520
+      ],
+      "webhookId": "618e82a7-e5ae-4bde-8a4a-82465d395768",
+      "credentials": {
+        "smtp": {
+          "id": "mLYNy3GvhAMGHDpd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const routeData = $('Route By Stage').item.json;\n\nconst statusMap = {\n  'send_email_1': 'Email1Sent',\n  'send_followup_1': 'Followup1Sent',\n  'send_followup_2': 'Followup2Sent',\n  'send_followup_3_breakup': 'Followup3Sent'\n};\n\nlet painPoint = routeData.PainPoint;\nlet service = routeData.Service;\n\nif (routeData.action === 'send_email_1') {\n  const aiData = $('Parse AI Response').item.json;\n  painPoint = aiData.PainPoint;\n  service = aiData.Service;\n}\n\nreturn [{\n  json: {\n    Email: routeData.Email,\n    Status: statusMap[routeData.action] || routeData.action,\n    LastContactDate: new Date().toISOString().split('T')[0],\n    PainPoint: painPoint,\n    Service: service\n  }\n}];"
+      },
+      "id": "a0d42a81-458a-4ba7-ac33-5d030823274b",
+      "name": "Prepare Sheet Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_RESOURCE_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "YOUR_RESOURCE_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $json.Email }}",
+            "PainPoint": "={{ $json.PainPoint }}",
+            "Status": "={{ $json.Status }}",
+            "LastContactDate": "={{ $json.LastContactDate }}",
+            "Service": "={{ $json.Service }}"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Industry",
+              "displayName": "Industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "PainPoint",
+              "displayName": "PainPoint",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "LastContactDate",
+              "displayName": "LastContactDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Service",
+              "displayName": "Service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "9a1d3932-67c8-49e5-a1f5-7bdbe21a492c",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2016,
+        1264
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gx2Aotyd3i9Mocyd",
+          "name": "Google Sheets account 9"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        512,
+        1200
+      ],
+      "id": "ed85005d-587b-48df-8f57-7e01e8cebb2c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 180) + 60 }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2224,
+        1264
+      ],
+      "id": "7b26b66a-2acf-413d-8168-872864580551",
+      "name": "Wait",
+      "webhookId": "a3d95939-7145-494f-a4f4-c74f978f8d66"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Trigger (9AM, Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "Read Leads Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads Sheet": {
+      "main": [
+        [
+          {
+            "node": "Decide Action Per Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Action Per Lead": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Stage": {
+      "main": [
+        [
+          {
+            "node": "Fetch Company Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-up 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-up 2 (value add)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-up 3 (breakup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Company Website": {
+      "main": [
+        [
+          {
+            "node": "Extract Website Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Website Text": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI - Generate Pitch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI - Generate Pitch": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Send Email 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email 1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 2 (value add)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 3 (breakup)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Sheet Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Route By Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "America/New_York",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "7594c266-5d5e-47ba-88db-5ab936fbf6c9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "669f4d03b9c661d26ee4f9a0522452a1565bea484ddfc51d3ae775c5257b3aa5"
+  },
+  "nodeGroups": [],
+  "id": "NmxAxHXwLjgf09fH",
+  "tags": []
+}
